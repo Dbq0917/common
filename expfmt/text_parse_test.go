@@ -190,6 +190,45 @@ name2{ labelname = "val1" , }-Inf
 				},
 			},
 		},
+		// 2b: Quoted HELP values may span lines without hiding subsequent
+		// metric families.
+		{
+			in: `# HELP first This is a "help text
+continued on the next line"
+# TYPE first gauge
+first 1
+# HELP second "help text with a \
+line continuation"
+# TYPE second counter
+second 2
+`,
+			out: []*dto.MetricFamily{
+				{
+					Name: proto.String("first"),
+					Help: proto.String("This is a \"help text\ncontinued on the next line\""),
+					Type: dto.MetricType_GAUGE.Enum(),
+					Metric: []*dto.Metric{
+						{
+							Gauge: &dto.Gauge{
+								Value: proto.Float64(1),
+							},
+						},
+					},
+				},
+				{
+					Name: proto.String("second"),
+					Help: proto.String("\"help text with a \nline continuation\""),
+					Type: dto.MetricType_COUNTER.Enum(),
+					Metric: []*dto.Metric{
+						{
+							Counter: &dto.Counter{
+								Value: proto.Float64(2),
+							},
+						},
+					},
+				},
+			},
+		},
 		// 3: The evil summary, mixed with other types and funny comments.
 		{
 			in: `

@@ -642,13 +642,14 @@ func (p *TextParser) startTimestamp() stateFn {
 }
 
 // readingHelp represents the state where the last byte read (now in
-// p.currentByte) is the first byte of the docstring after 'HELP'.
+// p.currentByte) is the first byte of the docstring after 'HELP'. Quoted
+// sections of the docstring may span physical lines.
 func (p *TextParser) readingHelp() stateFn {
 	if p.currentMF.Help != nil {
 		p.parseError(fmt.Sprintf("second HELP line for metric name %q", p.currentMF.GetName()))
 		return nil
 	}
-	// Rest of line is the docstring.
+	// Rest of the logical line is the docstring.
 	if p.readTokenUntilNewline(true); p.err != nil {
 		return nil // Unexpected end of input.
 	}
@@ -726,12 +727,16 @@ func (p *TextParser) readTokenUntilWhitespace() {
 // readTokenUntilNewline copies bytes from p.buf into p.currentToken.  The first
 // byte considered is the byte already read (now in p.currentByte).  The first
 // newline byte encountered is still copied into p.currentByte, but not into
-// p.currentToken. If recognizeEscapeSequence is true, two escape sequences are
-// recognized: '\\' translates into '\', and '\n' into a line-feed character.
-// All other escape sequences are invalid and cause an error.
+// p.currentToken. If recognizeEscapeSequence is true, the escape sequences
+// '\\', '\n', and '\"' are recognized. A newline inside a quoted string, or
+// immediately following a backslash inside a quoted string, is also copied
+// into p.currentToken, which allows quoted HELP values to span lines. All
+// other escape sequences are invalid and cause an error.
 func (p *TextParser) readTokenUntilNewline(recognizeEscapeSequence bool) {
 	p.currentToken.Reset()
 	escaped := false
+	quoted := false
+	quoteMayOpen := true
 	for p.err == nil {
 		if recognizeEscapeSequence && escaped {
 			switch p.currentByte {
@@ -741,19 +746,46 @@ func (p *TextParser) readTokenUntilNewline(recognizeEscapeSequence bool) {
 				p.currentToken.WriteByte('\n')
 			case '"':
 				p.currentToken.WriteByte('"')
+			case '\n':
+				if !quoted {
+					p.parseError(fmt.Sprintf("invalid escape sequence '\\%c'", p.currentByte))
+					return
+				}
+				p.currentToken.WriteByte('\n')
+				p.lineCount++
 			default:
 				p.parseError(fmt.Sprintf("invalid escape sequence '\\%c'", p.currentByte))
 				return
 			}
 			escaped = false
+			quoteMayOpen = false
 		} else {
 			switch p.currentByte {
 			case '\n':
+				if quoted {
+					p.currentToken.WriteByte('\n')
+					p.lineCount++
+					break
+				}
 				return
 			case '\\':
 				escaped = true
+			case '"':
+				if recognizeEscapeSequence {
+					if quoted {
+						quoted = false
+					} else if quoteMayOpen {
+						quoted = true
+					}
+				}
+				p.currentToken.WriteByte(p.currentByte)
+				quoteMayOpen = false
+			case ' ', '\t':
+				p.currentToken.WriteByte(p.currentByte)
+				quoteMayOpen = true
 			default:
 				p.currentToken.WriteByte(p.currentByte)
+				quoteMayOpen = false
 			}
 		}
 		p.currentByte, p.err = p.buf.ReadByte()
