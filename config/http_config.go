@@ -300,6 +300,7 @@ func (o *OAuth2) SetDirectory(dir string) {
 		return
 	}
 	o.ClientSecretFile = JoinDir(dir, o.ClientSecretFile)
+	o.ClientCertificateKeyFile = JoinDir(dir, o.ClientCertificateKeyFile)
 	o.TLSConfig.SetDirectory(dir)
 }
 

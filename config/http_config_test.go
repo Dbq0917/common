@@ -2750,6 +2750,28 @@ func TestLoadHTTPConfigFileResolvesPathsRelativeToConfigFile(t *testing.T) {
 	require.NoErrorf(t, err, "can't fetch URL: %v", err)
 }
 
+// TestLoadHTTPConfigFileResolvesOAuth2PathsRelativeToConfigFile ensures that
+// OAuth2 file paths inside a config loaded with LoadHTTPConfigFile are resolved
+// relative to the directory containing the config file, as documented by the
+// SetDirectory contract.
+func TestLoadHTTPConfigFileResolvesOAuth2PathsRelativeToConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "oauth-secret"), []byte("secret\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "oauth-key"), []byte("key\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "http.yml"), []byte(`oauth2:
+  client_id: 1
+  client_secret_file: oauth-secret
+  client_certificate_key_file: oauth-key
+  token_url: http://localhost/token
+`), 0o644))
+
+	cfg, _, err := LoadHTTPConfigFile(filepath.Join(dir, "http.yml"))
+	require.NoErrorf(t, err, "Error loading HTTP client config: %v", err)
+	require.NotNil(t, cfg.OAuth2)
+	require.Equal(t, filepath.Join(dir, "oauth-secret"), cfg.OAuth2.ClientSecretFile)
+	require.Equal(t, filepath.Join(dir, "oauth-key"), cfg.OAuth2.ClientCertificateKeyFile)
+}
+
 func TestCloneRequest(t *testing.T) {
 	t.Run("clone does not share the caller's header", func(t *testing.T) {
 		r, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
