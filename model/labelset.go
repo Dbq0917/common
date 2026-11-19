@@ -123,13 +123,30 @@ func (ls LabelSet) Merge(other LabelSet) LabelSet {
 	return result
 }
 
-// Fingerprint returns the LabelSet's fingerprint.
+// Fingerprint returns the LabelSet's v1 fingerprint.
+//
+// The v1 fingerprint is compatible with previously persisted fingerprints. It
+// is stable across map iteration orders, but it sorts the label names.
 func (ls LabelSet) Fingerprint() Fingerprint {
 	return labelSetToFingerprint(ls)
 }
 
-// FastFingerprint returns the LabelSet's Fingerprint calculated by a faster hashing
-// algorithm, which is, however, more susceptible to hash collisions.
+// StableFingerprint returns an order-independent v2 fingerprint without
+// sorting the label names.
+//
+// The result is stable for a given label set, but it is not interchangeable
+// with Fingerprint. Callers that persist fingerprints must version them or
+// migrate existing data before switching to StableFingerprint. As with any
+// 64-bit fingerprint, deduplication should compare the full label set when a
+// collision is detected.
+func (ls LabelSet) StableFingerprint() Fingerprint {
+	return labelSetToStableFingerprint(ls)
+}
+
+// FastFingerprint returns a fingerprint calculated by a faster hashing
+// algorithm, which is, however, more susceptible to hash collisions. It is
+// order-independent but is not interchangeable with Fingerprint or
+// StableFingerprint.
 func (ls LabelSet) FastFingerprint() Fingerprint {
 	return labelSetToFastFingerprint(ls)
 }

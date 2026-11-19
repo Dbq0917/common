@@ -70,6 +70,107 @@ func TestMetricToFingerprint(t *testing.T) {
 	}
 }
 
+func TestStableFingerprintOrderIndependent(t *testing.T) {
+	labels := []LabelSet{
+		{
+			"__name__": "http_requests_total",
+			"job":      "api",
+			"instance": "10.0.0.1:8080",
+		},
+		{
+			"instance": "10.0.0.1:8080",
+			"job":      "api",
+			"__name__": "http_requests_total",
+		},
+		{
+			"job":      "api",
+			"__name__": "http_requests_total",
+			"instance": "10.0.0.1:8080",
+		},
+	}
+
+	expected := labels[0].StableFingerprint()
+	if expected != 13595103726509818864 {
+		t.Errorf("unexpected stable fingerprint snapshot: %d", expected)
+	}
+	for i, labelSet := range labels[1:] {
+		if actual := labelSet.StableFingerprint(); actual != expected {
+			t.Errorf("scenario %d: expected stable fingerprint %d, got %d", i+1, expected, actual)
+		}
+	}
+
+	stringLabels := map[string]string{
+		"instance": "10.0.0.1:8080",
+		"__name__": "http_requests_total",
+		"job":      "api",
+	}
+	if actual := LabelsToStableSignature(stringLabels); actual != uint64(expected) {
+		t.Errorf("expected string label signature %d, got %d", expected, actual)
+	}
+}
+
+func TestStableFingerprintDistinguishesSets(t *testing.T) {
+	first := LabelSet{
+		"a": "bb",
+		"b": "c",
+	}
+	second := LabelSet{
+		"a":  "b",
+		"bb": "c",
+	}
+
+	if first.StableFingerprint() == second.StableFingerprint() {
+		t.Fatal("expected different label sets to have different stable fingerprints")
+	}
+}
+
+func TestFingerprintAllocations(t *testing.T) {
+	labels := LabelSet{
+		"__name__": "http_requests_total",
+		"job":      "api",
+		"instance": "10.0.0.1:8080",
+		"method":   "GET",
+		"status":   "200",
+		"cluster":  "prod",
+	}
+	stringLabels := map[string]string{
+		"__name__": "http_requests_total",
+		"job":      "api",
+		"instance": "10.0.0.1:8080",
+		"method":   "GET",
+		"status":   "200",
+		"cluster":  "prod",
+	}
+	excluded := map[LabelName]struct{}{"cluster": {}}
+
+	for name, fn := range map[string]func(){
+		"Fingerprint": func() {
+			_ = labels.Fingerprint()
+		},
+		"StableFingerprint": func() {
+			_ = labels.StableFingerprint()
+		},
+		"FastFingerprint": func() {
+			_ = labels.FastFingerprint()
+		},
+		"LabelsToSignature": func() {
+			_ = LabelsToSignature(stringLabels)
+		},
+		"LabelsToStableSignature": func() {
+			_ = LabelsToStableSignature(stringLabels)
+		},
+		"SignatureWithoutLabels": func() {
+			_ = SignatureWithoutLabels(Metric(labels), excluded)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if allocs := testing.AllocsPerRun(1000, fn); allocs != 0 {
+				t.Errorf("expected no allocations, got %f", allocs)
+			}
+		})
+	}
+}
+
 func TestMetricToFastFingerprint(t *testing.T) {
 	scenarios := []struct {
 		in  LabelSet
@@ -232,6 +333,28 @@ func BenchmarkMetricToFingerprintDouble(b *testing.B) {
 
 func BenchmarkMetricToFingerprintTriple(b *testing.B) {
 	benchmarkMetricToFingerprint(b, LabelSet{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 13843036195897128121)
+}
+
+func benchmarkMetricToStableFingerprint(b *testing.B, ls LabelSet) {
+	for b.Loop() {
+		_ = labelSetToStableFingerprint(ls)
+	}
+}
+
+func BenchmarkMetricToStableFingerprintScalar(b *testing.B) {
+	benchmarkMetricToStableFingerprint(b, nil)
+}
+
+func BenchmarkMetricToStableFingerprintSingle(b *testing.B) {
+	benchmarkMetricToStableFingerprint(b, LabelSet{"first-label": "first-label-value"})
+}
+
+func BenchmarkMetricToStableFingerprintDouble(b *testing.B) {
+	benchmarkMetricToStableFingerprint(b, LabelSet{"first-label": "first-label-value", "second-label": "second-label-value"})
+}
+
+func BenchmarkMetricToStableFingerprintTriple(b *testing.B) {
+	benchmarkMetricToStableFingerprint(b, LabelSet{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"})
 }
 
 func benchmarkMetricToFastFingerprint(b *testing.B, ls LabelSet, e Fingerprint) {

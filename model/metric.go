@@ -293,8 +293,22 @@ func (m Metric) Fingerprint() Fingerprint {
 	return LabelSet(m).Fingerprint()
 }
 
-// FastFingerprint returns a Metric's Fingerprint calculated by a faster hashing
-// algorithm, which is, however, more susceptible to hash collisions.
+// StableFingerprint returns an order-independent fingerprint without sorting
+// the metric's label names.
+//
+// The result is stable for a given metric, but it is not interchangeable with
+// Fingerprint. Callers that persist fingerprints must version them or migrate
+// existing data before switching to StableFingerprint. As with any 64-bit
+// fingerprint, deduplication should compare the full label set when a collision
+// is detected.
+func (m Metric) StableFingerprint() Fingerprint {
+	return LabelSet(m).StableFingerprint()
+}
+
+// FastFingerprint returns a fingerprint calculated by a faster hashing
+// algorithm, which is, however, more susceptible to hash collisions. It is
+// order-independent but is not interchangeable with Fingerprint or
+// StableFingerprint.
 func (m Metric) FastFingerprint() Fingerprint {
 	return LabelSet(m).FastFingerprint()
 }
